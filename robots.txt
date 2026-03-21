@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+
+Sitemap: https://hichemboutaba1.github.io/monpere-restaurant/sitemap.xml

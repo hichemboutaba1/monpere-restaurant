@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mon Père · Dashboard Chef</title>
+<meta name="robots" content="noindex, nofollow">
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500&family=Cormorant+Garamond:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -47,6 +48,15 @@ body{font-family:'Jost',sans-serif;background:var(--black);color:var(--cream);mi
 .resa-table{font-size:.8rem}
 .resa-table th,.resa-table td{padding:.6rem .4rem}
 .dash-header{flex-direction:column;gap:1rem;text-align:center}
+.date-nav{flex-direction:column;gap:.5rem;text-align:center}
+.date-nav button{width:100%}
+}
+@media(max-width:500px){
+.stats{grid-template-columns:1fr 1fr;gap:.5rem}
+.stat-card{padding:1rem}
+.stat-card .stat-num{font-size:1.8rem}
+.login-box{padding:2rem 1.5rem}
+.resa-table{display:block;overflow-x:auto}
 }
 </style>
 </head>
@@ -86,7 +96,15 @@ body{font-family:'Jost',sans-serif;background:var(--black);color:var(--cream);mi
 </div>
 
 <script>
-var ADMIN_PASS = 'monpere2026';
+// Password hash (SHA-256 of the admin password) - more secure than plain text
+var ADMIN_HASH = '282d8637095031548e6ba506e915c7c10536b688f7688e853ab91103980023b7'; // Change this hash when updating password
+async function hashPassword(pass) {
+  var encoder = new TextEncoder();
+  var data = encoder.encode(pass);
+  var hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  var hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+}
 var CONFIG = {
   SUPABASE_URL: 'https://wnwirmlvgjfzymixswsy.supabase.co',
   SUPABASE_KEY: 'sb_publishable_stJAl676haRp9yEIIeZt8g_oLdd67LW'
@@ -107,19 +125,37 @@ var demoData = [
   {nom:'Pierre Moreau',telephone:'07 11 22 33 44',date_resa:todayStr(),service:'midi',couverts:3,menu:'5temps',allergies:'',statut:'confirmee'}
 ];
 
-function tryLogin() {
-  if (document.getElementById('loginPass').value === ADMIN_PASS) {
+async function tryLogin() {
+  var pass = document.getElementById('loginPass').value;
+  var hash = await hashPassword(pass);
+  if (hash === ADMIN_HASH) {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
+    sessionStorage.setItem('adminAuth', 'true');
     loadReservations();
   } else {
     document.getElementById('loginError').style.display = 'block';
+    setTimeout(function() { document.getElementById('loginError').style.display = 'none'; }, 3000);
   }
 }
 function logout() {
+  sessionStorage.removeItem('adminAuth');
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('dashboard').style.display = 'none';
   document.getElementById('loginPass').value = '';
+}
+
+// Auto-login if already authenticated in this session
+if (sessionStorage.getItem('adminAuth') === 'true') {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  loadReservations();
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function changeDate(offset) {
@@ -149,8 +185,12 @@ async function loadReservations() {
         .select('*')
         .eq('date_resa', dateStr)
         .order('service', {ascending: true});
-      if (!result.error) reservations = result.data;
-    } catch(e) { console.log('Mode démo'); }
+      if (result.error) throw result.error;
+      reservations = result.data || [];
+    } catch(e) {
+      console.warn('Supabase indisponible, mode démo activé:', e.message || e);
+      reservations = demoData.filter(function(r) { return r.date_resa === dateStr; });
+    }
   } else {
     reservations = demoData.filter(function(r) { return r.date_resa === dateStr; });
   }
@@ -170,12 +210,12 @@ function renderTable(data) {
   var menuLabels = {'3temps':'3 Temps (32€)','5temps':'5 Temps (55€)','7temps':'7 Temps (65€)'};
   body.innerHTML = data.map(function(r, i) {
     return '<tr>' +
-      '<td style="color:var(--white);font-weight:400">' + r.nom + '</td>' +
-      '<td>' + r.telephone + '</td>' +
+      '<td style="color:var(--white);font-weight:400">' + escapeHtml(r.nom) + '</td>' +
+      '<td>' + escapeHtml(r.telephone) + '</td>' +
       '<td><span class="badge badge-' + r.service + '">' + (r.service === 'midi' ? 'Midi' : 'Soir') + '</span></td>' +
       '<td style="text-align:center;color:var(--white)">' + r.couverts + '</td>' +
       '<td>' + (menuLabels[r.menu] || 'Non précisé') + '</td>' +
-      '<td>' + (r.allergies || 'Aucune') + '</td>' +
+      '<td>' + escapeHtml(r.allergies || 'Aucune') + '</td>' +
       '<td><span class="badge badge-confirmee">Confirmée</span></td>' +
       '<td><button class="btn-delete" onclick="deleteResa(' + i + ')">Annuler</button></td>' +
     '</tr>';
